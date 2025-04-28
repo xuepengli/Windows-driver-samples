@@ -1,0 +1,51 @@
+name: Build vhidmini2 driver v3
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+jobs:
+  build:
+    name: Build vhidmini2 driver
+    runs-on: windows-2022
+    strategy:
+      matrix:
+        configuration: [Release]  # 只保留需要的配置（Debug/Release）
+        platform: [x64]          # 只保留目标平台（x64/arm64）
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      # 明确编译 vhidmini2 项目
+      - name: Build vhidmini2.sys
+        run: |
+          cd "hid\vhidmini2\driver\kmdf"
+          msbuild vhidmini2.vcxproj /p:Configuration=${{ matrix.configuration }} /p:Platform=${{ matrix.platform }} /p:SignMode=Test
+        env:
+          WDS_Configuration: ${{ matrix.configuration }}
+          WDS_Platform: ${{ matrix.platform }}
+
+      # 上传驱动文件（.sys/.inf/.cat）
+      - name: Upload Driver Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vhidmini2-driver-${{ matrix.configuration }}-${{ matrix.platform }}
+          path: |
+            hid\vhidmini2\sys\${{ matrix.platform }}\${{ matrix.configuration }}\vhidmini.sys
+            hid\vhidmini2\sys\${{ matrix.platform }}\${{ matrix.configuration }}\*.inf
+            hid\vhidmini2\sys\${{ matrix.platform }}\${{ matrix.configuration }}\*.cat
+
+      # 保留日志（可选）
+      - name: Archive Logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-${{ matrix.configuration }}-${{ matrix.platform }}
+          path: _logs
+
+  # 可移除全局报告任务（除非需要）
