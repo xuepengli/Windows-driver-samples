@@ -1,0 +1,91 @@
+name: msbuild-v14
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+
+env:
+  SOLUTION_FILE_PATH: hid/vhidmini2/driver/kmdf/vhidmini2.vcxproj
+  BUILD_CONFIGURATION: Release
+
+jobs:
+  build:
+    name: Build driver samples
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Debug, Release]
+        platform: [x64, arm64]
+    runs-on: windows-2022
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      # 新增步骤：打印目录结构
+      - name: Debug - Show workspace structure
+        shell: powershell
+        run: |
+          Write-Output "当前工作目录：$pwd"
+          Get-ChildItem -Recurse -Depth 3 | Format-Table FullName
+
+      # 新增步骤：验证项目文件存在性
+      - name: Debug - Verify project file
+        shell: powershell
+        run: |
+          $projectPath = "$env:SOLUTION_FILE_PATH"
+          Write-Output "检查项目文件路径：$projectPath"
+          if (Test-Path $projectPath) {
+            Write-Output "✅ 项目文件存在"
+          } else {
+            Write-Output "❌ 项目文件不存在"
+            exit 1
+          }
+
+      - name: Install Nuget Packages
+        run: nuget restore $env:SOLUTION_FILE_PATH -PackagesDirectory ./packages/
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v1.0.2
+
+      # 新增步骤：打印 MSBuild 详细信息
+      - name: Debug - MSBuild version
+        run: msbuild -version
+
+      - name: Build vhidmini2
+        shell: powershell
+        run: |
+          Write-Output "========= 开始构建 ========="
+          Write-Output "项目文件路径：$env:SOLUTION_FILE_PATH"
+          Write-Output "构建参数：Configuration=${{ matrix.configuration }}, Platform=${{ matrix.platform }}"
+          
+          msbuild "$env:SOLUTION_FILE_PATH" `
+            /p:Configuration=${{ matrix.configuration }} `
+            /p:Platform=${{ matrix.platform }} `
+            /p:OutputPath=./bin/${{ matrix.configuration }}/${{ matrix.platform }}/ `
+            /fl /flp:logfile=msbuild.log;verbosity=diagnostic
+          
+          Get-Content msbuild.log
+
+      - name: Retrieve and build all available solutions
+        run: .\Build-AllSamples.ps1 -Verbose
+        env:
+          WDS_Configuration: ${{ matrix.configuration }}
+          WDS_Platform: ${{ matrix.platform }}
+          WDS_ReportFileName: _overview.${{ matrix.configuration }}.${{ matrix.platform }}
+
+      - name: Archive build logs and overview build reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-${{ matrix.configuration }}-${{ matrix.platform }}
+          path: |
+            _logs
+            msbuild.log
+
+  report: ... # 保持原有配置不变
